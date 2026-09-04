@@ -1,0 +1,29 @@
+#python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+#data
+data/*.parquet
+data/*.csv
+data/generation_manifest.json
+data/slices.csv
+data/episodes_manifest.csv
+#db
+audit_trail.db
+#ide
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+#Environment & secrets
+.env
+.env.*
+#Logs and temporary
+*.log
+tmp/
+temp/
