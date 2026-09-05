@@ -10,6 +10,10 @@ A UPI merchant's transaction volume during Diwali or Independence Day sales can 
 
 The actual fraud that shows up during these windows has a different fingerprint if you look at the right signals: card testing, device-to-many-VPA fan-out, and coordinated low-value probing all show up in which identities are transacting, how concentrated they are across devices and IPs, whether declines cluster around one reason code, and whether the current volume is unusual *after* accounting for the calendar. This project builds a detector around that distinction and measures, honestly, how well it holds up.
 
+## The solution
+
+For every (category, festival-phase) pair, the model learns an expected volume multiplier from prior clean festive windows, walk-forward, never touching held-out data. Every downstream signal, seasonal residual, CUSUM, EWMA, is computed against this corrected expectation, so a genuine surge collapses to a residual near 1.0 while an attack on top of it still stands out. Once calendar-driven volume is accounted for, the model then asks a second question: does the remaining traffic's identity concentration, reuse pattern, and decline signature look like real customers or fabricated ones.
+
 ## How it works
 
 Three tiers, trained and evaluated identically so the comparison is fair:
