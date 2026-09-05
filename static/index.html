@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SurgeShield</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="/style.css?v=4">
+</head>
+<body>
+
+<!-- ============ LOGIN SCREEN ============ -->
+<div id="loginScreen">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-name">SurgeShield</div>
+      <div class="brand-tagline">Detect real attacks during festive surges, without drowning the risk team in false alarms.</div>
+    </div>
+  </header>
+  <div class="login-wrap">
+    <form id="loginForm" class="login-card">
+      <h2>Sign in</h2>
+      <p class="hint">Demo access. Enter exactly what the fields show below.</p>
+      <label>Username</label>
+      <input id="loginUser" type="text" placeholder="analyst" autocomplete="off">
+      <label>Password</label>
+      <input id="loginPass" type="password" placeholder="••••••••" autocomplete="off">
+      <button type="submit" class="btn-primary full-width">Log in</button>
+      <p id="loginError" class="login-error" style="display:none;">Incorrect username or password.</p>
+    </form>
+  </div>
+</div>
+
+<!-- ============ MAIN APP ============ -->
+<div id="mainApp" style="display:none;">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-name">SurgeShield</div>
+      <div class="brand-tagline">Detect real attacks during festive surges, without drowning the risk team in false alarms.</div>
+    </div>
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="operations">Operations</button>
+      <button class="tab-btn" data-tab="model">Model</button>
+    </nav>
+  </header>
+
+  <main>
+
+    <!-- ============ OPERATIONS TAB ============ -->
+    <section id="tab-operations" class="tab-panel active">
+
+      <div class="ops-layout">
+        <div class="feed-col">
+          <div class="panel">
+            <h3>Live feed</h3>
+            <p class="hint">Real held-out transactions from one merchant, replayed in chronological order.</p>
+            <div id="feed" class="feed"></div>
+          </div>
+        </div>
+
+        <div class="queue-col">
+          <div class="panel">
+            <h3>Pending review <span id="queueCount" class="queue-count">0</span></h3>
+            <div id="queue" class="queue"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div id="caseDetail" class="case-detail empty">
+          <p class="hint">Select a pending case to review it.</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Audit trail</h3>
+        <table id="auditTable">
+          <thead>
+            <tr><th>Logged</th><th>Slice</th><th>Window</th><th>System action</th><th>Signal</th>
+                <th>Prob.</th><th>Exposure</th><th>Analyst action</th><th>Note</th></tr>
+          </thead>
+          <tbody id="auditBody"></tbody>
+        </table>
+        <p id="auditEmpty" class="hint">No actions logged yet.</p>
+      </div>
+    </section>
+
+    <!-- ============ MODEL TAB ============ -->
+    <section id="tab-model" class="tab-panel">
+      <div class="panel">
+        <h2>Select a festival</h2>
+        <p class="hint">Trained festivals compared with festivals never seen during training. Click a marker to run live inference on that range.</p>
+        <div id="timeline-rail" class="timeline-rail">
+          <div id="timeline-months" class="timeline-months"></div>
+          <div class="rail-line"></div>
+          <div id="timeline-markers" class="timeline-markers"></div>
+        </div>
+        <div class="legend">
+          <span><i class="dot dot-train"></i> Trained on this festival</span>
+          <span><i class="dot dot-heldout"></i> Held out, never seen during training</span>
+        </div>
+      </div>
+
+      <div class="panel" id="tiers-section" style="display:none;">
+        <h2 id="tiers-heading">Tier comparison</h2>
+        <div id="tier-loading" class="tier-loading" style="display:none;">
+          <div class="spin-box"></div>
+          <p>Running live inference across all three tiers</p>
+        </div>
+        <div class="tier-grid" id="tier-grid"></div>
+        <div class="chart-card" id="chart-card" style="display:none;">
+          <h3>Total expected cost, this festival's test rows only</h3>
+          <canvas id="costChart" height="90"></canvas>
+          <p class="disclosure">Cost combines false-alarm review time (a stated Rs 50 per review) and the estimated exposure of
+            any missed attack episode (proxy: average amount times count times success rate, not exact ground truth).
+            No detection is the floor if nothing were ever flagged.</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>Synthetic data, disclosed assumptions throughout. See repository README for what is real versus stated.</p>
+  </footer>
+</div>
+
+<!-- ============ ESCALATE MODAL ============ -->
+<div id="escalateModal" class="modal-overlay" style="display:none;">
+  <div class="modal-card">
+    <h3>Escalate case</h3>
+    <div id="escalateContext" class="modal-context"></div>
+    <label>Escalate to</label>
+    <input id="escalateTo" type="text" placeholder="e.g. senior-analyst-priya">
+    <label>Note</label>
+    <textarea id="escalateNote" rows="3" placeholder="Why this needs a closer look"></textarea>
+    <div class="modal-actions">
+      <button id="escalateCancel" class="btn-secondary">Cancel</button>
+      <button id="escalateSubmit" class="btn-primary">Submit escalation</button>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js?v=4"></script>
+</body>
+</html>
