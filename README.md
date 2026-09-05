@@ -10,6 +10,17 @@ A UPI merchant's transaction volume during Diwali or Independence Day sales can 
 
 The actual fraud that shows up during these windows has a different fingerprint if you look at the right signals: card testing, device-to-many-VPA fan-out, and coordinated low-value probing all show up in which identities are transacting, how concentrated they are across devices and IPs, whether declines cluster around one reason code, and whether the current volume is unusual *after* accounting for the calendar. This project builds a detector around that distinction and measures, honestly, how well it holds up.
 
+## How it works
+
+Three tiers, trained and evaluated identically so the comparison is fair:
+
+- **Tier 0**: raw transaction count and its rate of change. No calendar awareness at all.
+- **Tier 1**: the same, plus a fixed 3x multiplier applied uniformly to every festival window, regardless of category or which festival it is.
+- **Tier 2**: an XGBoost classifier over decline rate and its dominant reason code, transaction amount statistics, device/IP/VPA concentration and reuse ratios, a per-slice walk-forward seasonal baseline, CUSUM and EWMA drift statistics computed against that baseline, and a per-(category, festival-phase) multiplier learned only from past clean festive windows. Probabilities are isotonic-calibrated on a held-out slice subset before any threshold is chosen.
+
+The three-tier structure exists to answer a specific question honestly: how much of Tier 2's performance comes from the behavioral features and calibration, versus just knowing a festival is happening.
+
+
 ## Results
 
 ### Detection by attack pattern (episode-level)
@@ -96,15 +107,6 @@ Tier 2 at the default 0.5 cutoff costs Rs 3,088,402, 24x worse than at its own t
 
 Raw numbers behind every chart above are in `data/eval/` as CSVs (`cost_sweep.csv`, `recall_by_attack_family.csv`, `episode_level_detection_by_family.csv`) for anyone who wants to recompute or replot them directly.
 
-## How it works
-
-Three tiers, trained and evaluated identically so the comparison is fair:
-
-- **Tier 0**: raw transaction count and its rate of change. No calendar awareness at all.
-- **Tier 1**: the same, plus a fixed 3x multiplier applied uniformly to every festival window, regardless of category or which festival it is.
-- **Tier 2**: an XGBoost classifier over decline rate and its dominant reason code, transaction amount statistics, device/IP/VPA concentration and reuse ratios, a per-slice walk-forward seasonal baseline, CUSUM and EWMA drift statistics computed against that baseline, and a per-(category, festival-phase) multiplier learned only from past clean festive windows. Probabilities are isotonic-calibrated on a held-out slice subset before any threshold is chosen.
-
-The three-tier structure exists to answer a specific question honestly: how much of Tier 2's performance comes from the behavioral features and calibration, versus just knowing a festival is happening. The 0.194 to 0.359 to 0.541 PR-AUC progression is that answer.
 
 ## What the model actually learned
 
