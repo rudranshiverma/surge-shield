@@ -1,22 +1,23 @@
 """
 generate_dataset.py
-Synthetic UPI e-commerce transaction generator for the "festive spike vs attack" fraud-detection project.
-No public dataset has real UPI-native fields (payer VPA identity, PSP handle, collect-request vs pay, device/IP-level fan-out). Hence synthetic,
-calibrated to real published shapes (NPCI festive volume swings, documented card-testing/ATO seasonal timing).
+Generates synthetic UPI e-commerce transaction data for training a festive-surge-vs-attack fraud detector. No public dataset records
+UPI-native fields (VPA identity, PSP handle, collect vs pay, device/IP fan-out) or real festival-timed fraud, so both are simulated here,
+calibrated to published aggregate patterns (NPCI festive volume, known card-testing/ATO seasonality).
 
-KEY ANTI-OVERFITTING DECISIONS:
-1. Organic new-customer churn is INCREASED during real festive windows, so "many new VPAs" alone cannot trivially separate attack from festive
-   growth- the model must combine features, not key on one.
-2. Festive windows get their own elevated decline-reason codes (bank_server_timeout / npci_timeout, from real infra strain) that are
-   DISTINCT from attack decline reasons (invalid_vpa / vpa_not_found /collect_request_expired).
-3. IP concentration has legitimate noise baked in: every ~8 regular customers in a slice share an IP hash block, approximating CGNAT
-   sharing on Indian mobile networks.
-4. Attack episodes are generated across a continuous INTENSITY parameter (0.3=borderline/camouflaged, 1.0=extreme/obvious), not fixed at maximum
-   separability, so the classifier cannot just memorize "extreme values= attack".
-5. seasonal_baseline_expected is computed WALK-FORWARD, from historical non-festival windows only, strictly before the current window -- the
-   generator's true multiplier is never exposed to the feature table.
-6. Train/test split is by SLICE and by FESTIVAL IDENTITY (New Year's Day Sale, Republic Day Sale, and Holi Sale are always test, regardless of
-   slice or time), plus an optional attack-family holdout - never by row shuffle.
+Design choices:
+- New-customer rate rises during real festive windows, so VPA novelty
+  alone can't separate attack from legitimate growth.
+- Festive windows get infra-driven decline codes (timeouts) distinct
+  from attack-driven ones (invalid VPA), so decline rate alone isn't
+  an attack signal either.
+- Regular customers in a slice share IP blocks (~8 per block), modeling
+  CGNAT, so IP concentration is a weaker signal than device concentration.
+- Attack intensity varies continuously (0.3-1.0) so attacks aren't all
+  maximally separable from normal traffic.
+- The seasonal baseline is computed walk-forward from history only; the
+  generator's true multipliers are never exposed to the feature table.
+- Train/test split is by slice and by festival identity (three festivals
+  held out entirely), never by row shuffle.
 """
 
 import argparse
@@ -30,7 +31,7 @@ import pandas as pd
 # CONFIG
 SIM_START = datetime(2026, 7, 15)
 WINDOW_MINUTES = 15
-WINDOWS_PER_DAY = (24*60) // WINDOW_MINUTES  
+WINDOWS_PER_DAY = (24*60)//WINDOW_MINUTES  
 
 CATEGORIES = ["electronics", "fashion", "grocery", "general"]
 REGIONS = ["north", "south", "east", "west", "central", "northeast"]
@@ -40,19 +41,20 @@ PSP_HANDLES = {
     "@okaxis": 0.12, "@ibl": 0.10, "@oksbi": 0.12, "@axl": 0.10,
 }
 
-TEST_AMOUNT_THRESHOLD = 10.0   
-BASE_DECLINE_RATE = 0.03       
+TEST_AMOUNT_THRESHOLD = 10.0   # "probe-sized" transactions
+BASE_DECLINE_RATE = 0.03       # ordinary day-to-day decline rate
+
 # category -> (lognormal mu, sigma) for transaction amount in INR
 CATEGORY_AMOUNT_PARAMS = {
-    "electronics":(8.6, 0.55),   
-    "fashion":(7.0, 0.6),   
+    "electronics": (8.6, 0.55),   
+    "fashion":(7.0, 0.6),    
     "grocery":(6.0, 0.5),    
     "general":(6.6, 0.6),    
 }
 
-# Festivals: ramp up to peak_day, decay after. category_mult is the peak multiplier for that category; the actual multiplier at any day is interpolated by a triangular ramp/decay shape.
+# Festival calendar: each entry ramps up to peak_day then decays.
 FESTIVALS = [
-    #TRAIN festivals
+    # TRAIN festivals
     {"name": "Independence Day Sale", "peak_day": (datetime(2026, 8, 15) - SIM_START).days,
      "ramp_days": 2, "decay_days": 1, "is_test_festival": False,
      "category_mult": {"electronics": 3.2, "fashion": 2.4, "grocery": 1.1, "general": 1.8}},
@@ -62,7 +64,7 @@ FESTIVALS = [
     {"name": "Diwali Mega Sale", "peak_day": (datetime(2026, 11, 8) - SIM_START).days,
      "ramp_days": 4, "decay_days": 2, "is_test_festival": False,
      "category_mult": {"electronics": 6.0, "fashion": 4.2, "grocery": 1.3, "general": 2.6}},
-    #TEST festivals
+    # TEST festivals (never seen in training)
     {"name": "New Year's Day Sale", "peak_day": (datetime(2027, 1, 1) - SIM_START).days,
      "ramp_days": 1, "decay_days": 1, "is_test_festival": True,
      "category_mult": {"electronics": 2.0, "fashion": 1.8, "grocery": 1.1, "general": 1.6}},
@@ -90,7 +92,7 @@ FAMILY_RANGES = {
     "ip_to_many_vpas":dict(duration=(3, 10),  volume_mult=(2, 7),decline=(0.20, 0.50), conc=(0.6, 0.95)),
     "high_decline_campaign":dict(duration=(4, 8),volume_mult=(1.5, 5), decline=(0.55, 0.90), conc=(0.3, 0.7)),
     "distributed_low_and_slow": dict(duration=(40, 80), volume_mult=(1.2, 1.8), decline=(0.12, 0.25), conc=(0.2, 0.5)),
-    "festive_attack":dict(duration=(2, 8),volume_mult=(2, 6),   decline=(0.25, 0.55), conc=(0.4, 0.85)),
+    "festive_attack":dict(duration=(2, 8),volume_mult=(2, 6),decline=(0.25, 0.55), conc=(0.4, 0.85)),
 }
 
 HOURLY_SHAPE = np.array([
@@ -150,7 +152,7 @@ def build_customer_pool(slice_id: str, n: int) -> list:
         pool.append(dict(
             vpa=h(f"vpa-{slice_id}-{i}"),
             device=h(f"dev-{slice_id}-{i}"),
-            ip=h(f"ip-{slice_id}-{i // 8}"),   
+            ip=h(f"ip-{slice_id}-{i // 8}"),  
         ))
     return pool
 
@@ -179,7 +181,7 @@ def build_episodes(slices_df: pd.DataFrame, sim_days: int,
 
         def scale(rng_pair):
             lo, hi = rng_pair
-            return lo + (hi - lo) * intensity
+            return lo + (hi-lo) * intensity
 
         duration = int(rng.integers(ranges["duration"][0], ranges["duration"][1] + 1))
 
@@ -201,8 +203,8 @@ def build_episodes(slices_df: pd.DataFrame, sim_days: int,
         start_ts = SIM_START + timedelta(days=start_day, minutes=start_window_idx * WINDOW_MINUTES)
         end_ts = start_ts + timedelta(minutes=duration * WINDOW_MINUTES)
 
-        n_atk_devices = max(1, int(round(2 + 8 *(1 - scale(ranges["conc"])))))
-        n_atk_ips = max(1, int(round(1 + 5 * (1-scale(ranges["conc"])))))
+        n_atk_devices = max(1, int(round(2 + 8 * (1 - scale(ranges["conc"])))))
+        n_atk_ips = max(1, int(round(1 + 5 * (1 - scale(ranges["conc"])))))
         if family == "device_to_many_vpas":
             n_atk_devices = int(rng.integers(1, 3))
         if family == "ip_to_many_vpas":
@@ -220,7 +222,6 @@ def build_episodes(slices_df: pd.DataFrame, sim_days: int,
             attacker_ips=[h(f"atkip-{eid_counter}-{i}") for i in range(n_atk_ips)],
         ))
 
-    #standalone flash-sale festive_spike episodes
     for _ in range(n_flash_sales):
         slice_id = slice_ids[rng.integers(len(slice_ids))]
         start_day = int(rng.integers(0, max(sim_days - 1, 1)))
@@ -239,6 +240,7 @@ def build_episodes(slices_df: pd.DataFrame, sim_days: int,
 
     return episodes
 
+
 def index_episodes_by_slice(episodes: list) -> dict:
     idx = {}
     for ep in episodes:
@@ -251,7 +253,8 @@ def index_episodes_by_slice(episodes: list) -> dict:
 def gen_txn(rng, category, pool, new_counter, amount_shift, active_attack,
             decline_base_rate, infra_decline_boost, slice_id, window_start,
             merchant_id, geo_region, txn_id):
-    
+    """Generate a single raw transaction row given the window's context."""
+
     if active_attack is not None:
         fam = active_attack["family"]
         if fam == "device_to_many_vpas":
@@ -351,13 +354,14 @@ def simulate(sim_days: int, n_slices: int, n_attack_episodes: int,
                 is_festival = fest_mult > 1.05
 
                 lam = base_lambda * HOURLY_SHAPE[hour] * dow_multiplier(dow) * fest_mult
-                lam *= float(rng.lognormal(0.0, 0.15)) 
+                lam *= float(rng.lognormal(0.0, 0.15))  
+                lam_legit = lam  # cached pre-episode lambda: legitimate demand, untouched by any attack volume_mult
 
                 infra_decline_boost = 0.0
                 amount_shift = 1.0
                 if is_festival:
                     infra_decline_boost = 0.01 + 0.03 * min((fest_mult - 1) / 5, 1)
-                    amount_shift *= 1 + 0.3 * min((fest_mult-1) / 5, 1)
+                    amount_shift *= 1 + 0.3 * min((fest_mult - 1) / 5, 1)
 
                 scenario_type = "festive_spike" if is_festival else "normal"
                 is_attack = 0
@@ -370,20 +374,31 @@ def simulate(sim_days: int, n_slices: int, n_attack_episodes: int,
                     if ep["start_ts"] <= window_start < ep["end_ts"]:
                         if ep["etype"] == "festive_spike_standalone":
                             lam *= ep["volume_mult"]
+                            lam_legit *= ep["volume_mult"]  # flash-sale volume is genuine demand, stays legit
                             amount_shift *= ep["amount_mult"]
                             if scenario_type == "normal":
                                 scenario_type = "festive_spike"
                         else:  # attack
                             lam *= ep["volume_mult"]
-                            is_attack = 1
-                            episode_id = ep["id"]
-                            attack_family = ep["family"]
-                            decline_base_rate = ep["decline_rate"]
-                            active_attack = ep
-                            scenario_type = "festive_attack" if scenario_type == "festive_spike" else "attack"
+                            if not is_attack:
+                                is_attack = 1
+                                episode_id = ep["id"]
+                                attack_family = ep["family"]
+                                decline_base_rate = ep["decline_rate"]
+                                active_attack = ep
+                                scenario_type = "festive_attack" if scenario_type == "festive_spike" else "attack"
 
-                n_txn = int(rng.poisson(max(lam, 0.01)))
-                for _ in range(n_txn):
+                n_txn_legit = int(rng.poisson(max(lam_legit, 0.01)))
+                n_txn_attack = int(rng.poisson(max(lam - lam_legit, 0.01))) if active_attack is not None else 0
+
+                for _ in range(n_txn_legit):
+                    txn_id_counter += 1
+                    raw_rows.append(gen_txn(
+                        rng, category, pool, next_counter, amount_shift, None,
+                        BASE_DECLINE_RATE, infra_decline_boost, slice_id, window_start,
+                        merchant_id, geo_region, txn_id_counter,
+                    ))
+                for _ in range(n_txn_attack):
                     txn_id_counter += 1
                     raw_rows.append(gen_txn(
                         rng, category, pool, next_counter, amount_shift, active_attack,
@@ -405,7 +420,7 @@ def simulate(sim_days: int, n_slices: int, n_attack_episodes: int,
     meta_df = pd.DataFrame(window_meta_rows)
     return raw_df, meta_df, slices_df, episodes
 
-# AGGREGATION: raw events to feature table
+# AGGREGATION: raw events -> feature table
 def aggregate_features(raw_df: pd.DataFrame, meta_df: pd.DataFrame) -> pd.DataFrame:
     if len(raw_df) == 0:
         agg = pd.DataFrame(columns=["slice_id", "window_start_ts"])
@@ -458,18 +473,19 @@ def aggregate_features(raw_df: pd.DataFrame, meta_df: pd.DataFrame) -> pd.DataFr
     full["rate_of_change"] = raw_roc.fillna(0.0)
     return full
 
-# WALK-FORWARD SEASONAL BASELINE + CUSUM/EWMA
+# WALK-FORWARD SEASONAL BASELINE + CUSUM/EWMA 
 def add_seasonal_baseline_and_stats(df: pd.DataFrame, cusum_k: float = 0.5,
                                      ewma_alpha: float = 0.3) -> pd.DataFrame:
     """
-    Two-layer baseline:
-    Layer 1 - baseline_nonfestival_hourly: per-slice, per-hour trailing
-    average of NON-festival transaction counts only.
-    Layer 2 - festival_multiplier_estimate: walk-forward running average of
-    (txn_count / baseline_nonfestival_hourly) observed during PRIOR festival
-    windows labeled scenario_type == 'festive_spike' (excluding attack and
-    festive_attack windows), pooled by (category, festival_phase).
-    """
+    Two-layer walk-forward baseline:
+
+    Layer 1: per-slice, per-hour trailing average of non-festival transaction
+    counts. Correct for ordinary days, blind to festival magnitude.
+    Layer 2: a per-(category, festival_phase) running multiplier, learned from
+    prior clean festive_spike windows only (never attack windows), and only from
+    split == 'train' rows, so a held-out slice's or festival's own behavior can
+    never leak into the shared estimate used for other slices' training features.
+"""
     df = df.sort_values(["window_start_ts", "slice_id"]).reset_index(drop=True)
     n = len(df)
 
@@ -483,9 +499,9 @@ def add_seasonal_baseline_and_stats(df: pd.DataFrame, cusum_k: float = 0.5,
     cusum_naive = np.zeros(n)
     ewma_naive = np.zeros(n)
 
-    slice_hour_hist = {}      # slice_id -> hour -> [non-festival txn counts]
-    slice_overall_hist = {}   # slice_id -> [non-festival txn counts] (fallback before hour history exists)
-    cat_phase_ratio_hist = {}  # (category, phase) -> [realized txn/nonfest_baseline ratios from clean festival windows, TRAIN split only]
+    slice_hour_hist = {}       # slice_id -> hour -> non-festival txn counts
+    slice_overall_hist = {}    # slice_id -> non-festival txn counts, fallback
+    cat_phase_ratio_hist = {}  # (category, phase) -> realized ratios, clean train-split festival windows only
 
     slice_id_arr = df["slice_id"].values
     category_arr = df["category"].values
@@ -546,11 +562,11 @@ def add_seasonal_baseline_and_stats(df: pd.DataFrame, cusum_k: float = 0.5,
         e_prev_naive[sid] = epn
         ewma_naive[i] = epn
 
+        # Update history after using it
         if scenario == "normal":
             slice_hour_hist[sid].setdefault(hour, []).append(txn)
             overall_hist.append(txn)
         elif scenario == "festive_spike" and row_split == "train":
-            # clean festival signal, AND from a training-split row only
             cat_phase_ratio_hist.setdefault(key, []).append(r_naive)
 
     df["baseline_nonfestival_hourly"] = baseline_naive
@@ -566,16 +582,15 @@ def add_seasonal_baseline_and_stats(df: pd.DataFrame, cusum_k: float = 0.5,
     df = df.sort_values(["slice_id", "window_start_ts"]).reset_index(drop=True)
     return df
 
-# TRAIN/TEST SPLIT: by slice AND by time, instead of row shuffle
+# TRAIN/TEST SPLIT: by slice AND by time, never by row shuffle
 def assign_split(df: pd.DataFrame, sim_days: int, test_slice_frac: float = 0.2,
                   family_holdout: str = None, seed: int = 7) -> pd.DataFrame:
     """
-    Three generalization axes:
-      1. Unseen SLICE  - test_slice_frac of merchants held out entirely.
-      2. Unseen FESTIVAL - any window whose festival_name is in
-         TEST_FESTIVAL_NAMES (New Year's Day Sale, Republic Day Sale, Holi
-         Sale) is always test, regardless of slice or time.
-      3. (Optional) unseen ATTACK FAMILY
+    Three generalization axes, no row shuffling:
+      1. Unseen slice: test_slice_frac of merchants held out entirely.
+      2. Unseen festival: any window in New Year's Day Sale, Republic Day Sale,
+         or Holi Sale is always test, regardless of slice or time.
+      3. Optional unseen attack family.
     """
     rng = np.random.default_rng(seed)
     all_slices = df["slice_id"].unique()
@@ -590,7 +605,7 @@ def assign_split(df: pd.DataFrame, sim_days: int, test_slice_frac: float = 0.2,
     df["split"] = np.where(is_test_slice | is_test_festival | is_holdout_family, "test", "train")
     return df
 
-#MAIN
+# MAIN
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sim-days", type=int, default=256)
@@ -601,7 +616,7 @@ def main():
     ap.add_argument("--family-holdout", type=str, default=None,
                      help="e.g. ip_to_many_vpas -- forces this attack family test-only")
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--outdir", type=str, default="/mnt/user-data/outputs")
+    ap.add_argument("--outdir", type=str, default="./data")
     args = ap.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
@@ -631,10 +646,9 @@ def main():
     except Exception as e:
         print(f"(parquet export skipped: {e})")
 
-    #validation summary printed to stdout
     print("=== GENERATION SUMMARY ===")
     print(f"raw_events rows:  {len(raw_df):,}")
-    print(f"features rows:{len(features):,}  "
+    print(f"features rows:    {len(features):,}  "
           f"(expected ~ {args.n_slices} slices x {args.sim_days*WINDOWS_PER_DAY:,} windows "
           f"= {args.n_slices*args.sim_days*WINDOWS_PER_DAY:,})")
     print("\nscenario_type counts:")
