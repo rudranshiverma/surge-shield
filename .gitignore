@@ -10,6 +10,7 @@ __pycache__/
 #data
 data/*.parquet
 data/*.csv
+!data/features.parquet
 data/generation_manifest.json
 data/slices.csv
 data/episodes_manifest.csv
