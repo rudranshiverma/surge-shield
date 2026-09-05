@@ -1,0 +1,106 @@
+{
+  "0": {
+    "overall": {
+      "tp": 1312,
+      "fp": 22116,
+      "fn": 1663,
+      "tn": 131581,
+      "precision": 0.056001365886972854,
+      "recall": 0.44100840336134456,
+      "f1": 0.09938264591144945,
+      "fpr": 0.1438935047528579,
+      "pr_auc": 0.19448423231433049
+    },
+    "festive_fpr_overall": 0.3441077003121748,
+    "festive_fpr_unseen_festival": 0.2905942467827404,
+    "festive_fpr_unseen_festival_n": 10568,
+    "festive_fpr_unseen_slice": 0.4617304492512479,
+    "festive_fpr_unseen_slice_n": 4808,
+    "calibrated": false
+  },
+  "1": {
+    "overall": {
+      "tp": 1747,
+      "fp": 20396,
+      "fn": 1228,
+      "tn": 133301,
+      "precision": 0.0788962651853859,
+      "recall": 0.5872268907563025,
+      "f1": 0.13910343180189502,
+      "fpr": 0.1327026552242399,
+      "pr_auc": 0.3591597245737065
+    },
+    "festive_fpr_overall": 0.17553329864724246,
+    "festive_fpr_unseen_festival": 0.16455336866010598,
+    "festive_fpr_unseen_festival_n": 10568,
+    "festive_fpr_unseen_slice": 0.19966722129783693,
+    "festive_fpr_unseen_slice_n": 4808,
+    "calibrated": false
+  },
+  "2": {
+    "overall": {
+      "tp": 1152,
+      "fp": 123,
+      "fn": 1823,
+      "tn": 153574,
+      "precision": 0.9035294117647059,
+      "recall": 0.3872268907563025,
+      "f1": 0.5421176470588235,
+      "fpr": 0.0008002758674534962,
+      "pr_auc": 0.5409262606638119
+    },
+    "festive_fpr_overall": 0.0018860561914672217,
+    "festive_fpr_unseen_festival": 0.00018925056775170325,
+    "festive_fpr_unseen_festival_n": 10568,
+    "festive_fpr_unseen_slice": 0.005615640599001664,
+    "festive_fpr_unseen_slice_n": 4808,
+    "calibrated": true
+  },
+  "tier2_calibration": {
+    "calib_slices": 8,
+    "calib_rows": 193536,
+    "calib_positives": 3363
+  },
+  "cost_model": {
+    "cost_per_false_alarm_inr": 50.0,
+    "exposure_proxy": "avg_amount * txn_count * (1 - decline_rate) per episode, estimated not measured",
+    "no_detection_floor_cost_inr": 54744750.52961642,
+    "threshold_selection_note": "thresholds selected on the calibration split, reported on test",
+    "tier_best": {
+      "0": {
+        "threshold": 0.445,
+        "total_cost": 1896908.026047619,
+        "fp_cost": 1731150.0,
+        "fn_cost": 165758.0260476191
+      },
+      "1": {
+        "threshold": 0.755,
+        "total_cost": 699785.7637015847,
+        "fp_cost": 219550.0,
+        "fn_cost": 480235.76370158466
+      },
+      "2": {
+        "threshold": 0.105,
+        "total_cost": 129456.457,
+        "fp_cost": 102200.0,
+        "fn_cost": 27256.457000000002
+      }
+    },
+    "tier2_at_cost_optimal_threshold": {
+      "threshold": 0.105,
+      "precision": 0.4389239637661268,
+      "recall": 0.5374789915966387,
+      "fpr": 0.013298893277032082
+    },
+    "tier2_precision_constrained": {
+      "min_precision": 0.95,
+      "threshold": 0.660060120240481,
+      "precision": 0.9581105169340464,
+      "recall": 0.36134453781512604,
+      "fpr": 0.0003057964696773522
+    },
+    "default_threshold": 0.5,
+    "tier2_default_threshold_cost_inr": 3088402.2497275043,
+    "n_straddling_episodes_excluded": 2
+  }
+}

@@ -1,0 +1,9 @@
+attack_family,n_test_episodes,episode_detection_rate,median_time_to_detect_windows
+device_to_many_vpas,24,1.0,0.0
+distributed_low_and_slow,32,1.0,5.0
+festive_attack,62,0.967741935483871,0.0
+gradual_ramp,22,1.0,0.0
+high_decline_campaign,18,0.8888888888888888,0.0
+ip_to_many_vpas,22,1.0,0.0
+low_value_testing,20,1.0,0.0
+sudden_burst,27,1.0,0.0
