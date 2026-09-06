@@ -27,41 +27,6 @@ The three-tier structure exists to answer a specific question honestly: how much
 
 ## Results
 
-### Detection by attack pattern (episode-level)
-
-An episode is one continuous attack campaign, whether it lasts 3 windows or 80. "Caught" means the detector flagged at least one window inside the episode.
-
-| Attack family | Test episodes | Detection rate | Median time to first flag |
-|---|---|---|---|
-| high_decline_campaign | 18 | 0.89 | 0 windows |
-| festive_attack | 62 | 0.97 | 0 windows |
-| sudden_burst | 27 | 1.00 | 0 windows |
-| low_value_testing | 20 | 1.00 | 0 windows |
-| ip_to_many_vpas | 22 | 1.00 | 0 windows |
-| gradual_ramp | 22 | 1.00 | 0 windows |
-| device_to_many_vpas | 24 | 1.00 | 0 windows |
-| distributed_low_and_slow | 32 | 1.00 | 5 windows (about 75 minutes) |
-
-![Episode-level detection rate by attack family](data/eval/episode_detection_by_family.png)
-
-Every episode of every attack type gets caught eventually except two out of eighteen high_decline_campaign episodes. `distributed_low_and_slow` is the interesting case: it takes longer to flag than everything else, because by design each individual window looks almost normal. That's the point of a low-and-slow attack. The CUSUM/EWMA drift statistics are what eventually catch it, once enough slightly-elevated windows accumulate. See the window-level numbers below for what that trade-off costs.
-
-### Detection by attack pattern (window-level, at the cost-optimal threshold)
-
-| Attack family | Test windows | Episodes | Window-level recall |
-|---|---|---|---|
-| distributed_low_and_slow | 1,798 | 32 | 0.30 |
-| festive_attack | 275 | 64 | 0.83 |
-| high_decline_campaign | 102 | 18 | 0.82 |
-| gradual_ramp | 281 | 22 | 0.88 |
-| device_to_many_vpas | 171 | 24 | 0.94 |
-| ip_to_many_vpas | 131 | 22 | 0.96 |
-| low_value_testing | 159 | 20 | 0.98 |
-| sudden_burst | 58 | 27 | 1.00 |
-
-![Window-level recall by attack family](data/eval/recall_by_attack_family.png)
-
-Most windows in a low-and-slow episode never individually cross the threshold on their own. The cumulative CUSUM statistic does, eventually, which is why episode-level detection stays at 1.00 even though window-level recall sits at 0.30. By design, `policy_engine.py` treats an elevated CUSUM as a step-up trigger on its own, without waiting for the underlying probability to clear the bar.
 
 ### Overall performance across the three tiers
 
@@ -109,6 +74,42 @@ Tier 2 cuts expected cost by 423x against no detection, 14.7x against the naive 
 
 Tier 2 at the default 0.5 cutoff costs Rs 3,088,402, 24x worse than at its own tuned threshold of 0.105. The calibrated model's probabilities aren't centered where a naive 0.5 cutoff assumes they'd be.
 
+### Detection by attack pattern (episode-level)
+
+An episode is one continuous attack campaign, whether it lasts 3 windows or 80. "Caught" means the detector flagged at least one window inside the episode.
+
+| Attack family | Test episodes | Detection rate | Median time to first flag |
+|---|---|---|---|
+| high_decline_campaign | 18 | 0.89 | 0 windows |
+| festive_attack | 62 | 0.97 | 0 windows |
+| sudden_burst | 27 | 1.00 | 0 windows |
+| low_value_testing | 20 | 1.00 | 0 windows |
+| ip_to_many_vpas | 22 | 1.00 | 0 windows |
+| gradual_ramp | 22 | 1.00 | 0 windows |
+| device_to_many_vpas | 24 | 1.00 | 0 windows |
+| distributed_low_and_slow | 32 | 1.00 | 5 windows (about 75 minutes) |
+
+![Episode-level detection rate by attack family](data/eval/episode_detection_by_family.png)
+
+Every episode of every attack type gets caught eventually except two out of eighteen high_decline_campaign episodes. `distributed_low_and_slow` is the interesting case: it takes longer to flag than everything else, because by design each individual window looks almost normal. That's the point of a low-and-slow attack. The CUSUM/EWMA drift statistics are what eventually catch it, once enough slightly-elevated windows accumulate. See the window-level numbers below for what that trade-off costs.
+
+### Detection by attack pattern (window-level, at the cost-optimal threshold)
+
+| Attack family | Test windows | Episodes | Window-level recall |
+|---|---|---|---|
+| distributed_low_and_slow | 1,798 | 32 | 0.30 |
+| festive_attack | 275 | 64 | 0.83 |
+| high_decline_campaign | 102 | 18 | 0.82 |
+| gradual_ramp | 281 | 22 | 0.88 |
+| device_to_many_vpas | 171 | 24 | 0.94 |
+| ip_to_many_vpas | 131 | 22 | 0.96 |
+| low_value_testing | 159 | 20 | 0.98 |
+| sudden_burst | 58 | 27 | 1.00 |
+
+![Window-level recall by attack family](data/eval/recall_by_attack_family.png)
+
+Most windows in a low-and-slow episode never individually cross the threshold on their own. The cumulative CUSUM statistic does, eventually, which is why episode-level detection stays at 1.00 even though window-level recall sits at 0.30. By design, `policy_engine.py` treats an elevated CUSUM as a step-up trigger on its own, without waiting for the underlying probability to clear the bar.
+
 Raw numbers behind every chart above are in `data/eval/` as CSVs (`cost_sweep.csv`, `recall_by_attack_family.csv`, `episode_level_detection_by_family.csv`) for anyone who wants to recompute or replot them directly.
 
 
@@ -155,6 +156,8 @@ python train_evaluate.py --data-dir data --outdir data/eval
 
 # 3. Serve the API and dashboard
 uvicorn server:app --reload
+
+# 4. Use mock username "analyst" and password "surgeshield2026"
 ```
 
 Then open `http://127.0.0.1:8000` in a browser. `server.py` expects `data/features.parquet` and the five files under `data/eval/` (`tier0_model.json`, `tier1_model.json`, `tier2_model.json`, `tier2_calibrator.joblib`, `cat_encoder.joblib`) produced by steps 1 and 2, and serves the frontend from a `static/` folder alongside `server.py` if one is present.
